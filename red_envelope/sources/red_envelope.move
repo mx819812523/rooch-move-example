@@ -1,6 +1,8 @@
 module red_envelope::red_envelope {
     use std::option;
     use std::vector;
+    use rooch_framework::transaction;
+    use rooch_framework::transaction::TransactionSequenceInfo;
     use moveos_std::table;
     use moveos_std::table::Table;
     use bitcoin_move::types;
@@ -242,9 +244,18 @@ module red_envelope::red_envelope {
     fun generate_magic_number(): u64 {
         // generate a random number from tx_context
         let bytes = vector::empty<u8>();
+        let tx_sequence_info_opt = tx_context::get_attribute<TransactionSequenceInfo>();
+        if (option::is_some(&tx_sequence_info_opt)) {
+            let tx_sequence_info = option::extract(&mut tx_sequence_info_opt);
+            let tx_accumulator_root = transaction::tx_accumulator_root(&tx_sequence_info);
+            let tx_accumulator_root_bytes = bcs::to_bytes(&tx_accumulator_root);
+            vector::append(&mut bytes, tx_accumulator_root_bytes);
+        } else {
+            // if it doesn't exist, get the tx hash
+            vector::append(&mut bytes, bcs::to_bytes(&tx_context::tx_hash()));
+        };
         vector::append(&mut bytes, bcs::to_bytes(&tx_context::sequence_number()));
         vector::append(&mut bytes, bcs::to_bytes(&tx_context::sender()));
-        vector::append(&mut bytes, bcs::to_bytes(&tx_context::tx_hash()));
         vector::append(&mut bytes, bcs::to_bytes(&timestamp::now_milliseconds()));
 
         let seed = hash::sha3_256(bytes);

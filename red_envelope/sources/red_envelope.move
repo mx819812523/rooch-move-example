@@ -1,6 +1,9 @@
 module red_envelope::red_envelope {
     use std::option;
+    use std::string::String;
     use std::vector;
+    use moveos_std::event::emit;
+    use moveos_std::type_info;
     use rooch_framework::transaction;
     use rooch_framework::transaction::TransactionSequenceInfo;
     use moveos_std::table;
@@ -16,17 +19,15 @@ module red_envelope::red_envelope {
     use moveos_std::timestamp::now_milliseconds;
     use moveos_std::object;
     use rooch_framework::coin_store;
-    use rooch_framework::coin;
     use moveos_std::tx_context::sender;
     use moveos_std::table_vec;
     use moveos_std::account;
     use moveos_std::object::{ObjectID, new, Object, to_shared, transfer};
     use moveos_std::table_vec::TableVec;
     use rooch_framework::coin_store::CoinStore;
-    use rooch_framework::coin::Coin;
 
     const U64MAX: u64 = 18446744073709551615;
-    const DEPLOYER: address = @red_envelope;
+    const DEPLOYER: address = @red_envelope_v3;
 
     const ErrorNotSupportType: u64 = 1;
     const ErrorEnvelopeInsufficient: u64 = 2;
@@ -48,12 +49,14 @@ module red_envelope::red_envelope {
 
     struct CoinEnvelope<phantom CoinType: key+store> has key, store {
         sender: address,
+        coin_type: String,
         claim_type: u8,
         start_time: u64,
         end_time: u64,
         total_envelope: u64,
         total_coin: u256,
-        claimed_address: vector<address>,
+        claimed_address: Table<address, u256>,
+        remaining_coin: u256,
         coin_store: Object<CoinStore<CoinType>>
     }
 
@@ -61,6 +64,12 @@ module red_envelope::red_envelope {
         coin_envelope: TableVec<ObjectID>,
         nft_envelope: TableVec<ObjectID>,
         user_table: Table<address, TableVec<ObjectID>>
+    }
+
+    struct ClaimCoinEvent has copy, drop {
+        addr: address,
+        coin: u256,
+        time: u64
     }
 
     fun init(owner: &signer) {
@@ -71,7 +80,7 @@ module red_envelope::red_envelope {
         });
     }
 
-    public fun create_nft_envelope<T: key+store>(
+    public entry fun create_nft_envelope<T: key+store>(
         start_time: u64,
         end_time: u64,
         nft_vec: vector<Object<T>>
@@ -103,7 +112,7 @@ module red_envelope::red_envelope {
         };
         to_shared(envelope_obj);
     }
-    public fun add_nft2envelope<T:key+store>(
+    public entry fun add_nft2envelope<T:key+store>(
         envelope_obj: &mut Object<NFTEnvelope<T>>,
         nft_vec: vector<Object<T>>
     ) {
@@ -118,7 +127,7 @@ module red_envelope::red_envelope {
         vector::destroy_empty(nft_vec);
     }
 
-    public fun claim_nft_envelope<T:key+store>(
+    public entry fun claim_nft_envelope<T:key+store>(
         envelope_obj: &mut Object<NFTEnvelope<T>>
     ){
         let envelope = object::borrow_mut(envelope_obj);
@@ -135,7 +144,7 @@ module red_envelope::red_envelope {
         vector::push_back(&mut envelope.claimed_address, sender());
     }
 
-    public fun recovery_nft_envelope<T: key+store>(
+    public entry fun recovery_nft_envelope<T: key+store>(
         envelope_obj: &mut Object<NFTEnvelope<T>>
     ){
         let envelope = object::borrow_mut(envelope_obj);
@@ -152,28 +161,31 @@ module red_envelope::red_envelope {
         }
     }
 
-    public fun create_coin_envelope<CoinType: key+store>(
+    public entry fun create_coin_envelope<CoinType: key+store>(
+        from: &signer,
         claim_type: u8,
         total_envelope: u64,
         total_coin: u256,
         start_time: u64,
         end_time: u64,
-        coin: &mut Coin<CoinType>
     ) {
         assert!(claim_type <= 1, ErrorNotSupportType);
         if (end_time <= start_time) {
             end_time = U64MAX;
         };
         let envelope_coin_store = coin_store::create_coin_store<CoinType>();
-        coin_store::deposit(&mut envelope_coin_store, coin::extract(coin, total_coin));
+        let coin = account_coin_store::withdraw<CoinType>(from, total_coin);
+        coin_store::deposit(&mut envelope_coin_store, coin);
         let envelope_obj = new(CoinEnvelope{
             sender: sender(),
+            coin_type: type_info::type_name<CoinType>(),
             claim_type,
             start_time,
             end_time,
             total_envelope,
-            total_coin: coin::value(coin),
-            claimed_address: vector[],
+            total_coin,
+            remaining_coin: total_coin,
+            claimed_address: table::new(),
             coin_store: envelope_coin_store
         });
         let envelope_id = object::id(&envelope_obj);
@@ -187,43 +199,49 @@ module red_envelope::red_envelope {
         to_shared(envelope_obj);
     }
 
-    public fun claim_coin_envelope<CoinType: key+store>(
+    public entry fun claim_coin_envelope<CoinType: key+store>(
         envelope_obj: &mut Object<CoinEnvelope<CoinType>>
     ){
         let envelope = object::borrow_mut(envelope_obj);
-        assert!(vector::length(&envelope.claimed_address) < envelope.total_envelope, ErrorEnvelopeInsufficient);
+        assert!(table::length(&envelope.claimed_address) < envelope.total_envelope, ErrorEnvelopeInsufficient);
         let now_time = now_milliseconds();
         assert!(envelope.start_time <= now_time, ErrorWrongOpenTime);
         assert!(envelope.end_time >= now_time, ErrorWrongOpenTime);
-        assert!(!vector::contains(&envelope.claimed_address, &sender()), ErrorAlreadyClaimed);
-
+        assert!(!table::contains(&envelope.claimed_address, sender()), ErrorAlreadyClaimed);
+        let claim_value = 0;
         if (envelope.claim_type == 0) {
             // Equal distribution
-            let claim_value = envelope.total_coin / (envelope.total_envelope as u256);
+            claim_value = envelope.total_coin / (envelope.total_envelope as u256);
             let reward_coin = coin_store::withdraw(&mut envelope.coin_store, claim_value);
             account_coin_store::deposit(sender(), reward_coin);
         }else if (envelope.claim_type == 1) {
             // Rand distribution
-            let left_envelope = envelope.total_envelope - vector::length(&envelope.claimed_address);
+            let left_envelope = envelope.total_envelope - table::length(&envelope.claimed_address);
             if (left_envelope == 1) {
                 // The last recipient will receive the remaining amount in full
-                let claim_value = coin_store::balance(&envelope.coin_store);
+                claim_value = coin_store::balance(&envelope.coin_store);
                 let reward_coin = coin_store::withdraw(&mut envelope.coin_store, claim_value);
                 account_coin_store::deposit(sender(), reward_coin);
 
             }else {
                 let max_value = coin_store::balance(&envelope.coin_store) / (left_envelope as u256) * 2;
                 let magic_number = generate_magic_number();
-                let claim_value = generate_index(magic_number, max_value);
+                claim_value = generate_index(magic_number, max_value);
                 let reward_coin = coin_store::withdraw(&mut envelope.coin_store, claim_value);
                 account_coin_store::deposit(sender(), reward_coin);
             }
         };
-        vector::push_back(&mut envelope.claimed_address, sender());
+        emit(ClaimCoinEvent{
+            addr: sender(),
+            coin: claim_value,
+            time: now_time
+        });
+        envelope.remaining_coin = coin_store::balance(&envelope.coin_store);
+        table::add(&mut envelope.claimed_address, sender(), claim_value);
 
     }
 
-    public fun recovery_coin_envelope<CoinType: key+store>(
+    public entry fun recovery_coin_envelope<CoinType: key+store>(
         envelope_obj: &mut Object<CoinEnvelope<CoinType>>
     ){
         let envelope = object::borrow_mut(envelope_obj);
@@ -231,6 +249,7 @@ module red_envelope::red_envelope {
         assert!(envelope.sender == sender(), ErrorNotSender);
         let claim_value = coin_store::balance(&envelope.coin_store);
         let reward_coin = coin_store::withdraw(&mut envelope.coin_store, claim_value);
+        envelope.remaining_coin = coin_store::balance(&envelope.coin_store);
         account_coin_store::deposit(sender(), reward_coin);
     }
 

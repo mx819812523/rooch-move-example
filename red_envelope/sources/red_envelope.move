@@ -27,7 +27,7 @@ module red_envelope::red_envelope {
     use rooch_framework::coin_store::CoinStore;
 
     const U64MAX: u64 = 18446744073709551615;
-    const DEPLOYER: address = @red_envelope_v3;
+    const DEPLOYER: address = @red_envelope;
 
     const ErrorNotSupportType: u64 = 1;
     const ErrorEnvelopeInsufficient: u64 = 2;

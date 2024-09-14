@@ -53,7 +53,7 @@ module luck_draw::luck_draw {
         account::move_resource_to(owner, BoxTable{box: table_vec::new()});
     }
 
-    public fun create_box(
+    public entry fun create_box(
         _admin: &mut Object<AdminCap>,
         reward_info: String,
         total_amount: u64,
@@ -81,7 +81,7 @@ module luck_draw::luck_draw {
         to_shared(box_obj);
     }
 
-    public fun claim_box(
+    entry fun claim_box(
         box_id: ObjectID,
     ){
         let box_obj = object::borrow_mut_object_shared<Box>(box_id);
@@ -93,7 +93,7 @@ module luck_draw::luck_draw {
         vector::push_back(&mut box.claimed_address, sender())
     }
 
-    public fun open_box(
+    entry fun open_box(
         box_id: ObjectID,
     ){
         let box_obj = object::borrow_mut_object_shared<Box>(box_id);

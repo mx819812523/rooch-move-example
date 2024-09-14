@@ -127,7 +127,7 @@ module red_envelope::red_envelope {
         vector::destroy_empty(nft_vec);
     }
 
-    public entry fun claim_nft_envelope<T:key+store>(
+    entry fun claim_nft_envelope<T:key+store>(
         envelope_obj: &mut Object<NFTEnvelope<T>>
     ){
         let envelope = object::borrow_mut(envelope_obj);
@@ -199,7 +199,7 @@ module red_envelope::red_envelope {
         to_shared(envelope_obj);
     }
 
-    public entry fun claim_coin_envelope<CoinType: key+store>(
+    entry fun claim_coin_envelope<CoinType: key+store>(
         envelope_obj: &mut Object<CoinEnvelope<CoinType>>
     ){
         let envelope = object::borrow_mut(envelope_obj);

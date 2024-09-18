@@ -44,7 +44,8 @@ module red_envelope::red_envelope {
         start_time: u64,
         end_time: u64,
         claimed_address: vector<address>,
-        nft: TableVec<Object<T>>
+        nft: TableVec<Object<T>>,
+        meta: EnvelopeMeta
     }
 
     struct CoinEnvelope<phantom CoinType: key+store> has key, store {
@@ -57,7 +58,16 @@ module red_envelope::red_envelope {
         total_coin: u256,
         claimed_address: Table<address, u256>,
         remaining_coin: u256,
-        coin_store: Object<CoinStore<CoinType>>
+        coin_store: Object<CoinStore<CoinType>>,
+        meta: EnvelopeMeta,
+    }
+
+    struct EnvelopeMeta has drop, copy, store {
+        name: String,
+        desc: String,
+        image_url: String,
+        theme_mode: u8,
+        color_mode: u8
     }
 
     struct EnvelopeTable has key, store {
@@ -89,6 +99,11 @@ module red_envelope::red_envelope {
     }
 
     public entry fun create_nft_envelope<T: key+store>(
+        name: String,
+        desc: String,
+        image_url: String,
+        theme_mode: u8,
+        color_mode: u8,
         start_time: u64,
         end_time: u64,
         nft_vec: vector<Object<T>>
@@ -108,7 +123,14 @@ module red_envelope::red_envelope {
             start_time,
             end_time,
             claimed_address: vector[],
-            nft: envelope_nft
+            nft: envelope_nft,
+            meta: EnvelopeMeta{
+                name,
+                desc,
+                image_url,
+                theme_mode,
+                color_mode
+            }
         });
         let envelope_id = object::id(&envelope_obj);
         let envelope_table = account::borrow_mut_resource<EnvelopeTable>(DEPLOYER);
@@ -179,6 +201,11 @@ module red_envelope::red_envelope {
 
     public entry fun create_coin_envelope<CoinType: key+store>(
         from: &signer,
+        name: String,
+        desc: String,
+        image_url: String,
+        theme_mode: u8,
+        color_mode: u8,
         claim_type: u8,
         total_envelope: u64,
         total_coin: u256,
@@ -202,7 +229,14 @@ module red_envelope::red_envelope {
             total_coin,
             remaining_coin: total_coin,
             claimed_address: table::new(),
-            coin_store: envelope_coin_store
+            coin_store: envelope_coin_store,
+            meta: EnvelopeMeta{
+                name,
+                desc,
+                image_url,
+                theme_mode,
+                color_mode
+            }
         });
         let envelope_id = object::id(&envelope_obj);
         let envelope_table = account::borrow_mut_resource<EnvelopeTable>(DEPLOYER);

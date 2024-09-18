@@ -39,7 +39,16 @@ module luck_draw::luck_draw {
         is_end: bool,
         // If there is too much data here, it needs to be changed to TableVec
         claimed_address: vector<address>,
-        reward_address: vector<address>
+        reward_address: vector<address>,
+        meta: BoxMeta
+    }
+
+    struct BoxMeta has drop, copy, store {
+        name: String,
+        desc: String,
+        image_url: String,
+        theme_mode: u8,
+        color_mode: u8
     }
 
     struct BoxTable has key, store {
@@ -54,6 +63,11 @@ module luck_draw::luck_draw {
     }
 
     public entry fun create_box(
+        name: String,
+        desc: String,
+        image_url: String,
+        theme_mode: u8,
+        color_mode: u8,
         _admin: &mut Object<AdminCap>,
         reward_info: String,
         total_amount: u64,
@@ -73,7 +87,14 @@ module luck_draw::luck_draw {
             is_end: false,
             // If there is too much data here, it needs to be changed to TableVec
             claimed_address: vector[],
-            reward_address: vector[]
+            reward_address: vector[],
+            meta: BoxMeta{
+                name,
+                desc,
+                image_url,
+                theme_mode,
+                color_mode
+            }
         });
         let box_id = object::id(&box_obj);
         let box_table = account::borrow_mut_resource<BoxTable>(DEPLOYER);

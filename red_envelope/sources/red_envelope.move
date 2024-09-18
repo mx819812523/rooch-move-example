@@ -67,8 +67,16 @@ module red_envelope::red_envelope {
     }
 
     struct ClaimCoinEvent has copy, drop {
+        envelope_id: ObjectID,
         addr: address,
         coin: u256,
+        time: u64
+    }
+
+    struct ClaimNFTEvent has copy, drop {
+        envelope_id: ObjectID,
+        addr: address,
+        nft_id: ObjectID,
         time: u64
     }
 
@@ -130,6 +138,7 @@ module red_envelope::red_envelope {
     entry fun claim_nft_envelope<T:key+store>(
         envelope_obj: &mut Object<NFTEnvelope<T>>
     ){
+        let envelope_id = object::id(envelope_obj);
         let envelope = object::borrow_mut(envelope_obj);
         let now_time = now_milliseconds();
         assert!(envelope.start_time <= now_time, ErrorWrongOpenTime);
@@ -140,6 +149,13 @@ module red_envelope::red_envelope {
         let magic_number = generate_magic_number();
         let claim_value = generate_index(magic_number, max_value);
         let nft = table_vec::swap_remove(&mut envelope.nft, (claim_value as u64));
+        let nft_id = object::id(&nft);
+        emit(ClaimNFTEvent{
+            envelope_id,
+            addr: sender(),
+            nft_id,
+            time: now_milliseconds()
+        });
         transfer(nft, sender());
         vector::push_back(&mut envelope.claimed_address, sender());
     }
@@ -202,6 +218,7 @@ module red_envelope::red_envelope {
     entry fun claim_coin_envelope<CoinType: key+store>(
         envelope_obj: &mut Object<CoinEnvelope<CoinType>>
     ){
+        let envelope_id = object::id(envelope_obj);
         let envelope = object::borrow_mut(envelope_obj);
         assert!(table::length(&envelope.claimed_address) < envelope.total_envelope, ErrorEnvelopeInsufficient);
         let now_time = now_milliseconds();
@@ -232,6 +249,7 @@ module red_envelope::red_envelope {
             }
         };
         emit(ClaimCoinEvent{
+            envelope_id,
             addr: sender(),
             coin: claim_value,
             time: now_time

@@ -2,6 +2,8 @@ module luck_draw::luck_draw {
     use std::option;
     use std::string::String;
     use std::vector;
+    use moveos_std::table;
+    use moveos_std::table::Table;
     use rooch_framework::transaction;
     use rooch_framework::transaction::TransactionSequenceInfo;
     use bitcoin_move::types;
@@ -52,14 +54,17 @@ module luck_draw::luck_draw {
     }
 
     struct BoxTable has key, store {
-        box: TableVec<ObjectID>
+        box: TableVec<ObjectID>,
+        claim_box_event: Table<address, TableVec<ObjectID>>,
+        rewarded_event: Table<address, TableVec<ObjectID>>
     }
+
 
     struct AdminCap has key, store {}
 
     fun init(owner: &signer) {
         transfer(new_named_object(AdminCap{}), sender());
-        account::move_resource_to(owner, BoxTable{box: table_vec::new()});
+        account::move_resource_to(owner, BoxTable{box: table_vec::new(), claim_box_event: table::new(), rewarded_event: table::new()});
     }
 
     public entry fun create_box(
@@ -106,11 +111,17 @@ module luck_draw::luck_draw {
         box_id: ObjectID,
     ){
         let box_obj = object::borrow_mut_object_shared<Box>(box_id);
+        let box_table = account::borrow_mut_resource<BoxTable>(DEPLOYER);
         let box = object::borrow_mut(box_obj);
         let now_time = now_milliseconds();
         assert!(box.start_time <= now_time, ErrorWrongClaimTime);
         let is_end = check_box_is_end(box);
         assert!(!is_end, ErrorBoxCannotClaim);
+        if (!table::contains(&box_table.claim_box_event, sender())) {
+            table::add(&mut box_table.claim_box_event, sender(), table_vec::singleton<ObjectID>(box_id))
+        }else {
+            table_vec::push_back(table::borrow_mut(&mut box_table.claim_box_event, sender()), box_id)
+        };
         vector::push_back(&mut box.claimed_address, sender())
     }
 
@@ -118,6 +129,7 @@ module luck_draw::luck_draw {
         box_id: ObjectID,
     ){
         let box_obj = object::borrow_mut_object_shared<Box>(box_id);
+        let box_table = account::borrow_mut_resource<BoxTable>(DEPLOYER);
         let box = object::borrow_mut(box_obj);
         let now_time = now_milliseconds();
         assert!(box.start_time <= now_time, ErrorWrongClaimTime);
@@ -132,6 +144,11 @@ module luck_draw::luck_draw {
                 let max_value = vector::length(&box.claimed_address);
                 let reward_index = generate_index(magic_number, max_value, index);
                 let reward_address = vector::swap_remove(&mut box.claimed_address, reward_index);
+                if (!table::contains(&box_table.rewarded_event, reward_address)) {
+                    table::add(&mut box_table.rewarded_event, reward_address, table_vec::singleton<ObjectID>(box_id))
+                }else {
+                    table_vec::push_back(table::borrow_mut(&mut box_table.rewarded_event, reward_address), box_id)
+                };
                 vector::push_back(&mut box.reward_address, reward_address);
             };
         }
@@ -205,4 +222,14 @@ module luck_draw::luck_draw {
         return value
     }
 
+
+    public fun claim_box_event(addr: address): &TableVec<ObjectID> {
+        let box_table = account::borrow_resource<BoxTable>(DEPLOYER);
+        table::borrow(&box_table.claim_box_event, addr)
+    }
+
+    public fun rewarded_event(addr: address): &TableVec<ObjectID> {
+        let box_table = account::borrow_resource<BoxTable>(DEPLOYER);
+        table::borrow(&box_table.rewarded_event, addr)
+    }
 }

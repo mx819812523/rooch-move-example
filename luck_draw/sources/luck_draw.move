@@ -150,6 +150,7 @@ module luck_draw::luck_draw {
                     table_vec::push_back(table::borrow_mut(&mut box_table.rewarded_event, reward_address), box_id)
                 };
                 vector::push_back(&mut box.reward_address, reward_address);
+                index = index + 1;
             };
         }
     }

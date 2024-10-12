@@ -137,7 +137,7 @@ module luck_draw::luck_draw {
         assert!(is_end, ErrorWrongOpenTime);
         if (!box.is_end) {
             // claim over but box not open, now we open box
-            box.is_end == true;
+            box.is_end = true;
             let index = 0;
             let magic_number = generate_magic_number();
             while (index < box.reward_amount) {

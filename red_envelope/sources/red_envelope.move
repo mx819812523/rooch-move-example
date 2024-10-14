@@ -99,6 +99,7 @@ module red_envelope::red_envelope {
     }
 
     public entry fun create_nft_envelope<T: key+store>(
+        signer: &signer,
         name: String,
         desc: String,
         image_url: String,
@@ -106,7 +107,7 @@ module red_envelope::red_envelope {
         color_mode: u8,
         start_time: u64,
         end_time: u64,
-        nft_vec: vector<Object<T>>
+        nft_vec: vector<ObjectID>
     ){
         if (end_time <= start_time) {
             end_time = U64MAX;
@@ -114,7 +115,7 @@ module red_envelope::red_envelope {
         let envelope_nft = table_vec::new<Object<T>>();
         let i = vector::length(&nft_vec);
         while (i > 0) {
-            table_vec::push_back(&mut envelope_nft, vector::pop_back(&mut nft_vec));
+            table_vec::push_back(&mut envelope_nft, object::take_object<T>(signer, vector::pop_back(&mut nft_vec)));
             i = i - 1;
         };
         vector::destroy_empty(nft_vec);
